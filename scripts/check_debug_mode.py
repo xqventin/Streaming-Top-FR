@@ -34,7 +34,7 @@ assert "Mode Debug" in fr
 assert "Activer les logs Debug" in fr
 assert "{debug_enabled}" in fr
 
-assert 'const STFR_VERSION = "1.0.9";' in card
-assert '"version": "1.0.9"' in manifest
+assert 'const STFR_VERSION = "1.0.9-stremio.1";' in card
+assert '"version": "1.0.9-stremio.1"' in manifest
 
 print("Optional Debug mode checks passed.")
