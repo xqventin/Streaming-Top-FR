@@ -1,7 +1,7 @@
 {
   "domain": "streaming_top_fr",
   "name": "Streaming Top FR",
-  "version": "1.0.9-stremio.1",
+  "version": "1.0.9-stremio.2",
   "config_flow": true,
   "iot_class": "cloud_polling",
   "requirements": [],

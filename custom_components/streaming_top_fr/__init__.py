@@ -12,6 +12,7 @@ from .storage import StreamingTopStore
 from .sources import NetflixOfficialClient, JustWatchClient, LocalMetadataClient, GenreMetadataExtension
 from .coordinator import StreamingTopCoordinator
 from .playback import SUPPORTED_PLAYBACK_PROVIDERS, async_launch, log_launch_failure
+from .catalog_search import async_catalog_search
 from .local_library import LocalLibraryScanner
 from .settings import async_load_legacy_settings, normalize_settings
 from .watch_registry import CanonicalWatchRegistry
@@ -1111,6 +1112,36 @@ def _register_ws(hass):
         )
 
     @websocket_api.websocket_command(
+        {
+            vol.Required("type"): f"{DOMAIN}/catalog_search",
+            vol.Optional("entry_id"): str,
+            vol.Required("query"): str,
+            vol.Optional("media_type"): vol.In(["movie", "tv", "all"]),
+            vol.Optional("limit"): int,
+        }
+    )
+    @websocket_api.async_response
+    async def catalog_search(hass, connection, msg):
+        # Fork addition: search the full JustWatch France catalogue.
+        data = _entry_data(hass, msg.get("entry_id"))
+        if not data:
+            connection.send_error(msg["id"], "not_loaded", "Streaming Top FR not loaded")
+            return
+        media_type = msg.get("media_type")
+        try:
+            items = await async_catalog_search(
+                data["coordinator"].justwatch,
+                msg["query"],
+                None if media_type == "all" else media_type,
+                msg.get("limit") or 24,
+            )
+        except Exception as err:  # noqa: BLE001
+            _PACKAGE_LOGGER.warning("Streaming Top FR catalog search failed: %s", err)
+            connection.send_error(msg["id"], "search_failed", f"Recherche impossible : {err}")
+            return
+        connection.send_result(msg["id"], {"query": msg["query"], "items": items})
+
+    @websocket_api.websocket_command(
         {vol.Required("type"): f"{DOMAIN}/refresh", vol.Optional("entry_id"): str}
     )
     @websocket_api.async_response
@@ -1248,4 +1279,5 @@ def _register_ws(hass):
     websocket_api.async_register_command(hass, refresh_local_library)
     websocket_api.async_register_command(hass, refresh)
     websocket_api.async_register_command(hass, play)
+    websocket_api.async_register_command(hass, catalog_search)
     hass.data[DOMAIN]["_ws_registered"] = True
