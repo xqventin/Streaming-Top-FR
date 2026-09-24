@@ -2,13 +2,28 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 
-SUPPORTED_PLAYBACK_PROVIDERS = {"netflix", "disney", "prime"}
+SUPPORTED_PLAYBACK_PROVIDERS = {"netflix", "disney", "prime", "stremio"}
+
+# Stremio (fork addition): opens the title's detail page in Stremio from its
+# IMDb id. Only the `remote` entity (Android TV Remote integration) is needed;
+# ADB is optional and only used as a more direct launcher when configured.
+STREMIO_PACKAGE = "com.stremio.one"
+_IMDB_RE = re.compile(r"^tt\d{5,10}$")
+
+
+def stremio_deep_link(imdb_id: str, media_type: str | None) -> str:
+    imdb_id = str(imdb_id or "").strip()
+    if not _IMDB_RE.match(imdb_id):
+        raise ValueError("ID IMDb indisponible pour ce titre")
+    kind = "series" if str(media_type or "").casefold() in {"tv", "show", "series"} else "movie"
+    return f"stremio:///detail/{kind}/{imdb_id}"
 
 
 def _require_entity(player: dict[str, Any], key: str) -> str:
@@ -31,6 +46,31 @@ async def async_launch_android_tv(
 ) -> None:
     """Launch a validated streaming flow on an Android TV / Freebox Pop target."""
     remote = _require_entity(player, "remote")
+
+    if provider == "stremio":
+        link = stremio_deep_link(content_id or "", watch_url)
+        adb_player = str(player.get("adb_player") or "").strip()
+        await _call(hass, "remote", "turn_on", {"entity_id": remote})
+        await asyncio.sleep(2)
+        if adb_player:
+            await _call(
+                hass,
+                "androidtv",
+                "adb_command",
+                {
+                    "entity_id": adb_player,
+                    "command": (
+                        "am start -a android.intent.action.VIEW "
+                        f"-d '{link}' {STREMIO_PACKAGE}"
+                    ),
+                },
+            )
+        else:
+            await _call(
+                hass, "remote", "turn_on", {"entity_id": remote, "activity": link}
+            )
+        return
+
     adb_player = _require_entity(player, "adb_player")
 
     # Wake the destination first. The configured media_player is intentionally

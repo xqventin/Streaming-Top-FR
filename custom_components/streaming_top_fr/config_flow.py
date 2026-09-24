@@ -549,7 +549,10 @@ def _player_schema(
         (FIELD_PLAYER_REMOTE, "remote", current.get("remote")),
         (FIELD_PLAYER_ADB, "media_player", current.get("adb_player")),
     ):
-        marker = vol.Required(field, default=value) if value else vol.Required(field)
+        # Fork: ADB is optional (only Netflix / Disney+ / Prime need it;
+        # Stremio works with the Android TV Remote entity alone).
+        factory = vol.Optional if field == FIELD_PLAYER_ADB else vol.Required
+        marker = factory(field, default=value) if value else factory(field)
         schema[marker] = _entity(domain)
 
     if include_add_another:
@@ -832,7 +835,7 @@ class StreamingTopFrConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "type": "android_tv",
                     "media_player": user_input[FIELD_PLAYER_MEDIA],
                     "remote": user_input[FIELD_PLAYER_REMOTE],
-                    "adb_player": user_input[FIELD_PLAYER_ADB],
+                    "adb_player": user_input.get(FIELD_PLAYER_ADB) or "",
                 }
                 if user_input.get(FIELD_ADD_ANOTHER, False):
                     self._player_counter += 1
@@ -1309,7 +1312,7 @@ class StreamingTopFrOptionsFlow(OptionsFlowWithReload):
                     "type": "android_tv",
                     "media_player": user_input[FIELD_PLAYER_MEDIA],
                     "remote": user_input[FIELD_PLAYER_REMOTE],
-                    "adb_player": user_input[FIELD_PLAYER_ADB],
+                    "adb_player": user_input.get(FIELD_PLAYER_ADB) or "",
                 }
                 return self._save()
 

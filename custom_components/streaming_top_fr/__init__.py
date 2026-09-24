@@ -1180,7 +1180,9 @@ def _register_ws(hass):
                 f"Type de destination non pris en charge : {player.get('type')}",
             )
             return
-        if not player.get("remote") or not player.get("adb_player"):
+        if not player.get("remote") or (
+            provider != "stremio" and not player.get("adb_player")
+        ):
             connection.send_error(
                 msg["id"],
                 "incomplete_player",
@@ -1212,6 +1214,11 @@ def _register_ws(hass):
                 return
             content_id = resolved.get("playback_id")
             watch_url = resolved.get("watch_url")
+
+        if provider == "stremio":
+            # Fork addition: content_id carries the IMDb id and watch_url the
+            # media type, so the historical launch signature stays unchanged.
+            watch_url = msg.get("media_type")
 
         task = hass.async_create_task(
             async_launch(hass, provider, player, content_id, watch_url),

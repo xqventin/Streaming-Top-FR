@@ -91,7 +91,7 @@
           "player_name": "Display name",
           "player_media_player": "Main media player",
           "player_remote": "Remote",
-          "player_adb_player": "Android Debug Bridge media player",
+          "player_adb_player": "Android Debug Bridge media player (optional, required for Netflix / Disney+ / Prime)",
           "add_another": "Add another destination"
         }
       }
@@ -216,7 +216,7 @@
           "player_name": "Display name",
           "player_media_player": "Main media player",
           "player_remote": "Remote",
-          "player_adb_player": "Android Debug Bridge media player",
+          "player_adb_player": "Android Debug Bridge media player (optional, required for Netflix / Disney+ / Prime)",
           "delete_player": "Delete this destination"
         }
       },
