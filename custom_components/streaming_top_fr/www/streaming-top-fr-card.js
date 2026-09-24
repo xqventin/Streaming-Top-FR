@@ -1,4 +1,4 @@
-const STFR_VERSION = "1.0.9-stremio.1";
+const STFR_VERSION = "1.0.9-stremio.2";
 class StreamingTopFrCard extends HTMLElement {
   connectedCallback(){
     if(this._statusSyncHandler)return;
@@ -3290,5 +3290,72 @@ StreamingTopFrCard.prototype._detail=async function(item){
       await this._playStremio(item,button.dataset.stremioPlayer,button);
     });
   });
+  return result;
+};
+
+
+// Fork addition (1.0.9-stremio.2): full-catalogue search.
+// The historical search only filters the loaded popularity pool. This layer
+// adds a "search the whole catalogue" panel under the search box, backed by
+// the streaming_top_fr/catalog_search WebSocket command (JustWatch France).
+function stfrCatalogPanelHtml(card,query){
+  const st=card._stfrCatalog||{};
+  const same=st.query===query;
+  const esc=v=>card._esc(v);
+  const btnStyle="padding:8px 14px;border:0;border-radius:999px;background:var(--primary-color);color:var(--text-primary-color,#fff);font:inherit;font-weight:800;cursor:pointer";
+  if(!same||(!st.loading&&!st.items&&!st.error)){
+    return `<div style="display:flex;justify-content:center;margin:10px 0 4px"><button type="button" data-stfr-catalog-go style="${btnStyle}">🔎 Chercher « ${esc(query)} » dans tout le catalogue</button></div>`;
+  }
+  if(st.loading)return `<div style="text-align:center;margin:12px 0;color:var(--secondary-text-color)">Recherche de « ${esc(query)} » dans tout le catalogue…</div>`;
+  if(st.error)return `<div style="text-align:center;margin:12px 0;color:var(--error-color)">${esc(st.error)} <button type="button" data-stfr-catalog-go style="${btnStyle}">Réessayer</button></div>`;
+  const items=st.items||[];
+  if(!items.length)return `<div style="text-align:center;margin:12px 0;color:var(--secondary-text-color)">Aucun titre trouvé pour « ${esc(query)} » dans le catalogue France.</div>`;
+  const tiles=items.map((i,idx)=>{
+    const poster=i.poster?`<img src="${esc(i.poster)}" loading="lazy" style="width:100%;aspect-ratio:2/3;object-fit:cover;border-radius:12px;display:block">`:`<div style="width:100%;aspect-ratio:2/3;border-radius:12px;background:var(--secondary-background-color);display:flex;align-items:center;justify-content:center;font-size:2rem;font-weight:900">${esc((i.title||"?")[0])}</div>`;
+    const where=i.provider_name?esc(i.provider_name):"Stremio";
+    const meta=[i.year,i.media_type==="tv"?"Série":"Film",where].filter(Boolean).join(" · ");
+    return `<button type="button" data-stfr-catalog-idx="${idx}" style="all:unset;cursor:pointer;display:flex;flex-direction:column;gap:6px;min-width:0">${poster}<b style="font-size:.85rem;line-height:1.2;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${esc(i.title)}</b><small style="color:var(--secondary-text-color);font-size:.72rem">${meta}</small></button>`;
+  }).join("");
+  return `<div style="margin:12px 0 6px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><strong style="font-size:.95rem">Tout le catalogue · « ${esc(query)} »</strong><span style="flex:1"></span><button type="button" data-stfr-catalog-close style="border:0;background:none;color:var(--secondary-text-color);font:inherit;cursor:pointer">Masquer</button></div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px">${tiles}</div></div>`;
+}
+async function stfrRunCatalogSearch(card,query){
+  if(!card._hass)return;
+  card._stfrCatalog={query,loading:true};
+  card._render?.();
+  try{
+    const res=await card._hass.callWS({type:"streaming_top_fr/catalog_search",query,media_type:"all",limit:24});
+    if((card._stfrCatalog||{}).query!==query)return;
+    card._stfrCatalog={query,items:Array.isArray(res?.items)?res.items:[]};
+  }catch(e){
+    if((card._stfrCatalog||{}).query!==query)return;
+    card._stfrCatalog={query,error:`Recherche impossible (${e?.message||e})`};
+  }
+  card._render?.();
+}
+function stfrInstallCatalogSearch(card){
+  if(!(card instanceof StreamingTopFrCard))return;
+  const root=card.shadowRoot;if(!root)return;
+  root.querySelector(".stfr-catalog-panel")?.remove();
+  const query=String(stfrSearchQuery(card)||"").trim();
+  if(query.length<2||card._stfrCatalogHidden===query)return;
+  const box=root.querySelector(".stfr-search-box");
+  if(!box)return;
+  const panel=document.createElement("div");
+  panel.className="stfr-catalog-panel";
+  panel.innerHTML=stfrCatalogPanelHtml(card,query);
+  box.after(panel);
+  panel.querySelectorAll("[data-stfr-catalog-go]").forEach(b=>b.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();stfrRunCatalogSearch(card,query)}));
+  panel.querySelector("[data-stfr-catalog-close]")?.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();card._stfrCatalogHidden=query;card._render?.()});
+  const items=(card._stfrCatalog||{}).items||[];
+  panel.querySelectorAll("[data-stfr-catalog-idx]").forEach(b=>b.addEventListener("click",e=>{
+    e.preventDefault();e.stopPropagation();
+    const item=items[Number(b.dataset.stfrCatalogIdx)];
+    if(item)card._detail(item);
+  }));
+}
+const _stfrApplyResponsiveLayoutBeforeCatalog=stfrApplyResponsiveLayout;
+stfrApplyResponsiveLayout=function(card){
+  const result=_stfrApplyResponsiveLayoutBeforeCatalog(card);
+  try{stfrInstallCatalogSearch(card)}catch(e){console.warn("[Streaming Top FR] catalog search",e)}
   return result;
 };
