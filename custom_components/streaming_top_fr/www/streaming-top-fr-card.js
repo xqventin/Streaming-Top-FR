@@ -1,4 +1,4 @@
-const STFR_VERSION = "1.0.9";
+const STFR_VERSION = "1.0.9-stremio.1";
 class StreamingTopFrCard extends HTMLElement {
   connectedCallback(){
     if(this._statusSyncHandler)return;
@@ -3240,4 +3240,55 @@ StreamingTopFrCard.prototype.disconnectedCallback=function(){
 };
 StreamingLocalCard.prototype.disconnectedCallback=function(){
   stfrCleanupResponsiveLayout(this);
+};
+
+
+// Fork addition (1.0.9-stremio.1): "Voir sur Stremio" button.
+// Layered on top of the existing popups like the Local copy bridge: any title
+// with an IMDb id can be opened on the Stremio detail page of a destination,
+// whatever the streaming platform it is listed on.
+StreamingTopFrCard.prototype._stremioImdbId=function(item){
+  const id=String(item?.imdb_id||"").trim();
+  return /^tt\d{5,10}$/.test(id)?id:"";
+};
+StreamingTopFrCard.prototype._stremioSection=function(item){
+  if(!this._directPlaybackEnabled())return"";
+  if(!this._supportsPlayback("stremio"))return"";
+  const imdb=this._stremioImdbId(item);
+  const players=this._players();
+  if(!imdb||!players.length)return"";
+  const buttons=players.map(pl=>`<button class="stremio" data-stremio-player="${this._esc(pl.id)}" title="Ouvrir la fiche dans Stremio${pl.media_player?` · ${this._esc(pl.media_player)}`:""}" style="background:linear-gradient(rgba(123,91,245,.34),rgba(64,38,160,.44)),rgba(18,14,30,.85)!important;border-color:rgba(140,110,255,.6)!important"><span class="play-brand"><ha-icon icon="mdi:play-circle"></ha-icon></span><span class="playcopy"><strong>Stremio</strong><small>${this._esc(pl.name)}</small></span></button>`).join("");
+  return `<div class="service-play stremio-play"><div class="playrow">${buttons}</div></div>`;
+};
+StreamingTopFrCard.prototype._playStremio=async function(item,playerId,button){
+  if(!this._hass||!playerId)return;
+  const imdb=this._stremioImdbId(item);if(!imdb)return;
+  const old=button?.innerHTML;
+  if(button){button.disabled=true;button.innerHTML='<span class="play-brand"><ha-icon icon="mdi:loading"></ha-icon></span><span class="playcopy"><strong>Lancement…</strong></span>'}
+  try{
+    const msg={type:"streaming_top_fr/play",provider:"stremio",player:playerId,content_id:imdb};
+    if(item.media_type)msg.media_type=String(item.media_type);
+    if(item.title)msg.title=String(item.title);
+    await this._hass.callWS(msg);
+    this.shadowRoot?.querySelector(".modalbg")?.remove();
+  }catch(e){
+    if(button){button.disabled=false;button.innerHTML=old||"Stremio"}
+    this._error=`Stremio : ${String(e)}`;
+  }
+};
+const _stfrPlaySectionsBeforeStremio=StreamingTopFrCard.prototype._playSections;
+StreamingTopFrCard.prototype._playSections=function(item){
+  return _stfrPlaySectionsBeforeStremio.call(this,item)+this._stremioSection(item);
+};
+const _stfrDetailBeforeStremio=StreamingTopFrCard.prototype._detail;
+StreamingTopFrCard.prototype._detail=async function(item){
+  const result=await _stfrDetailBeforeStremio.call(this,item);
+  const modal=this.shadowRoot?.querySelector(".modalbg");
+  modal?.querySelectorAll("[data-stremio-player]").forEach(button=>{
+    button.addEventListener("click",async event=>{
+      event.stopPropagation();
+      await this._playStremio(item,button.dataset.stremioPlayer,button);
+    });
+  });
+  return result;
 };
